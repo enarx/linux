@@ -1345,6 +1345,9 @@ int sev_snp_init(int *error)
 	if (!cpu_feature_enabled(X86_FEATURE_SEV_SNP))
 		return -ENODEV;
 
+	if (!sev_version_greater_or_equal(SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR))
+		return -ENODEV;
+
 	mutex_lock(&sev_cmd_mutex);
 	rc = __sev_snp_init_locked(error);
 	mutex_unlock(&sev_cmd_mutex);
