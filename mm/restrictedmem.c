@@ -272,14 +272,15 @@ int restrictedmem_get_page(struct file *file, pgoff_t offset,
 {
 	struct restrictedmem_data *data = file->f_mapping->private_data;
 	struct file *memfd = data->memfd;
+	struct folio *folio = NULL;
 	struct page *page;
 	int ret;
 
-	ret = shmem_getpage(file_inode(memfd), offset, &page, SGP_WRITE);
+	ret = shmem_get_folio(file_inode(memfd), offset, &folio, SGP_WRITE);
 	if (ret)
 		return ret;
 
-	*pagep = page;
+	*pagep = folio_file_page(folio, index);
 	if (order)
 		*order = thp_order(compound_head(page));
 
@@ -295,14 +296,15 @@ int restrictedmem_get_page_noalloc(struct file *file, pgoff_t offset,
 {
 	struct restrictedmem_data *data = file->f_mapping->private_data;
 	struct file *memfd = data->memfd;
+	struct folio *folio = NULL;
 	struct page *page;
 	int ret;
 
-	ret = shmem_getpage(file_inode(memfd), offset, &page, SGP_NOALLOC);
+	ret = shmem_get_folio(file_inode(memfd), offset, &page, SGP_NOALLOC);
 	if (ret)
 		return ret;
 
-	*pagep = page;
+	*pagep = folio_file_page(folio, index);
 	if (order)
 		*order = thp_order(compound_head(page));
 
