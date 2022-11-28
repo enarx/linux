@@ -272,19 +272,19 @@ int restrictedmem_get_page(struct file *file, pgoff_t offset,
 {
 	struct restrictedmem_data *data = file->f_mapping->private_data;
 	struct file *memfd = data->memfd;
-	struct page *page;
+	struct folio *folio = NULL;
 	int ret;
 
-	ret = shmem_getpage(file_inode(memfd), offset, &page, SGP_WRITE);
+	ret = shmem_get_folio(file_inode(memfd), offset, &folio, SGP_WRITE);
 	if (ret)
 		return ret;
 
-	*pagep = page;
+	*pagep = folio_file_page(folio, offset);
 	if (order)
-		*order = thp_order(compound_head(page));
+		*order = thp_order(compound_head(*pagep));
 
-	SetPageUptodate(page);
-	unlock_page(page);
+	SetPageUptodate(*pagep);
+	unlock_page(*pagep);
 
 	return 0;
 }
@@ -295,19 +295,19 @@ int restrictedmem_get_page_noalloc(struct file *file, pgoff_t offset,
 {
 	struct restrictedmem_data *data = file->f_mapping->private_data;
 	struct file *memfd = data->memfd;
-	struct page *page;
+	struct folio *folio = NULL;
 	int ret;
 
-	ret = shmem_getpage(file_inode(memfd), offset, &page, SGP_NOALLOC);
+	ret = shmem_get_folio(file_inode(memfd), offset, &folio, SGP_NOALLOC);
 	if (ret)
 		return ret;
 
-	*pagep = page;
+	*pagep = folio_file_page(folio, offset);
 	if (order)
-		*order = thp_order(compound_head(page));
+		*order = thp_order(compound_head(*pagep));
 
-	SetPageUptodate(page);
-	unlock_page(page);
+	SetPageUptodate(*pagep);
+	unlock_page(*pagep);
 
 	return 0;
 }
