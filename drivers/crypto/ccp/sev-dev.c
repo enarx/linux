@@ -939,6 +939,13 @@ static int __sev_platform_init_locked(int *error)
 	if (sev->state == SEV_STATE_INIT)
 		return 0;
 
+	/* Obtain the TMR memory area for SEV-ES use: */
+	if (!sev_es_tmr) {
+		sev_es_tmr = sev_fw_alloc(sev_es_tmr_size);
+		if (!sev_es_tmr)
+			return -ENOMEM;
+	}
+
 	if (sev_init_ex_buffer) {
 		init_function = __sev_init_ex_locked;
 		rc = sev_read_init_ex_file();
@@ -2146,7 +2153,7 @@ EXPORT_SYMBOL_GPL(sev_issue_cmd_external_user);
 void sev_pci_init(void)
 {
 	struct sev_device *sev = psp_master->sev_data;
-	int error, rc;
+	int rc;
 
 	if (!sev)
 		return;
@@ -2181,26 +2188,6 @@ void sev_pci_init(void)
 			goto err;
 		}
 	}
-
-	/*
-	 * If boot CPU supports the SNP, then first attempt to initialize
-	 * the SNP firmware.
-	 */
-	if (cpu_feature_enabled(X86_FEATURE_SEV_SNP)) {
-		rc = sev_snp_init(&error);
-		if (rc != -ENODEV)
-			/*
-			 * If we failed to INIT SNP then don't abort the probe.
-			 * Continue to initialize the legacy SEV firmware.
-			 */
-			dev_err(sev->dev, "SEV-SNP: failed to INIT error %#x\n", error);
-	}
-
-	/* Obtain the TMR memory area for SEV-ES use */
-	sev_es_tmr = sev_fw_alloc(sev_es_tmr_size);
-	if (!sev_es_tmr)
-		dev_warn(sev->dev,
-			 "SEV: TMR allocation failed, SEV-ES support unavailable\n");
 
 	return;
 
