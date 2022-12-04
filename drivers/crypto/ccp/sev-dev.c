@@ -1381,6 +1381,12 @@ static int __sev_snp_init_locked(int *error)
 	if (sev->snp_initialized)
 		return 0;
 
+	if (!sev_version_greater_or_equal(SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR)) {
+		dev_dbg(sev->dev, "SEV-SNP support requires firmware version >= %d:%d\n",
+			SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR);
+		return 0;
+	}
+
 	/*
 	 * The SNP_INIT requires the MSR_VM_HSAVE_PA must be set to 0h
 	 * across all cores.
@@ -2313,25 +2319,19 @@ void sev_pci_init(void)
 		}
 	}
 
+	rc = sev_snp_init(&error, true);
+	if (rc)
+		/*
+		 * Don't abort the probe if SNP INIT failed,
+		 * continue to initialize the legacy SEV firmware.
+		 */
+		dev_err(sev->dev, "SEV-SNP: failed to INIT error %#x\n", error);
+
 	/*
 	 * If boot CPU supports SNP, then first attempt to initialize
 	 * the SNP firmware.
 	 */
 	if (cpu_feature_enabled(X86_FEATURE_SEV_SNP)) {
-		if (!sev_version_greater_or_equal(SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR)) {
-			dev_err(sev->dev, "SEV-SNP support requires firmware version >= %d:%d\n",
-				SNP_MIN_API_MAJOR, SNP_MIN_API_MINOR);
-		} else {
-			rc = sev_snp_init(&error, true);
-			if (rc) {
-				/*
-				 * Don't abort the probe if SNP INIT failed,
-				 * continue to initialize the legacy SEV firmware.
-				 */
-				dev_err(sev->dev, "SEV-SNP: failed to INIT error %#x\n", error);
-			}
-		}
-
 		/*
 		 * Allocate the intermediate buffers used for the legacy command handling.
 		 */
