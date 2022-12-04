@@ -924,6 +924,137 @@ static int __sev_init_ex_locked(int *error)
 	return __sev_do_cmd_locked(SEV_CMD_INIT_EX, &data, error);
 }
 
+static int __sev_get_api_version_locked(void)
+{
+	struct sev_device *sev = psp_master->sev_data;
+	struct sev_user_data_status status;
+	int error = 0, ret;
+
+	ret = __sev_do_cmd_locked(SEV_CMD_PLATFORM_STATUS, &status, &error);
+	if (ret) {
+		dev_err(sev->dev,
+			"SEV: failed to get status. Error: %#x\n", error);
+		return 1;
+	}
+
+	sev->api_major = status.api_major;
+	sev->api_minor = status.api_minor;
+	sev->build = status.build;
+	sev->state = status.state;
+
+	return 0;
+}
+
+static int sev_get_firmware(struct device *dev,
+			    const struct firmware **firmware)
+{
+	char fw_name_specific[SEV_FW_NAME_SIZE];
+	char fw_name_subset[SEV_FW_NAME_SIZE];
+
+	snprintf(fw_name_specific, sizeof(fw_name_specific),
+		 "amd/amd_sev_fam%.2xh_model%.2xh.sbin",
+		 boot_cpu_data.x86, boot_cpu_data.x86_model);
+
+	snprintf(fw_name_subset, sizeof(fw_name_subset),
+		 "amd/amd_sev_fam%.2xh_model%.1xxh.sbin",
+		 boot_cpu_data.x86, (boot_cpu_data.x86_model & 0xf0) >> 4);
+
+	/* Check for SEV FW for a particular model.
+	 * Ex. amd_sev_fam17h_model00h.sbin for Family 17h Model 00h
+	 *
+	 * or
+	 *
+	 * Check for SEV FW common to a subset of models.
+	 * Ex. amd_sev_fam17h_model0xh.sbin for
+	 *     Family 17h Model 00h -- Family 17h Model 0Fh
+	 *
+	 * or
+	 *
+	 * Fall-back to using generic name: sev.fw
+	 */
+	if ((firmware_request_nowarn(firmware, fw_name_specific, dev) >= 0) ||
+	    (firmware_request_nowarn(firmware, fw_name_subset, dev) >= 0) ||
+	    (firmware_request_nowarn(firmware, SEV_FW_FILE, dev) >= 0))
+		return 0;
+
+	return -ENOENT;
+}
+
+/* Don't fail if SEV FW couldn't be updated. Continue with existing SEV FW */
+static void __sev_update_firmware_once(struct device *dev)
+{
+	struct sev_device *sev = psp_master->sev_data;
+	struct sev_data_download_firmware *data;
+	const struct firmware *firmware;
+	int ret, error, order;
+	struct page *p;
+	u64 data_size;
+
+	if (sev->update_firmware_called)
+		return;
+
+	sev->update_firmware_called = true;
+
+	if (!sev_version_greater_or_equal(0, 15)) {
+		dev_dbg(dev, "DOWNLOAD_FIRMWARE not supported\n");
+		return;
+	}
+
+	if (sev_get_firmware(dev, &firmware) == -ENOENT) {
+		dev_dbg(dev, "No SEV firmware file present\n");
+		return;
+	}
+
+	/*
+	 * SEV FW expects the physical address given to it to be 32
+	 * byte aligned. Memory allocated has structure placed at the
+	 * beginning followed by the firmware being passed to the SEV
+	 * FW. Allocate enough memory for data structure + alignment
+	 * padding + SEV FW.
+	 */
+	data_size = ALIGN(sizeof(struct sev_data_download_firmware), 32);
+
+	order = get_order(firmware->size + data_size);
+	p = alloc_pages(GFP_KERNEL, order);
+	if (!p) {
+		ret = -1;
+		goto fw_err;
+	}
+
+	/*
+	 * Copy firmware data to a kernel allocated contiguous
+	 * memory region.
+	 */
+	data = page_address(p);
+	memcpy(page_address(p) + data_size, firmware->data, firmware->size);
+
+	data->address = __psp_pa(page_address(p) + data_size);
+	data->len = firmware->size;
+
+	ret = __sev_do_cmd_locked(SEV_CMD_DOWNLOAD_FIRMWARE, data, &error);
+
+	/*
+	 * A quirk for fixing the committed TCB version, when upgrading from
+	 * earlier firmware version than 1.50.
+	 */
+	if (!ret && !sev_version_greater_or_equal(1, 50))
+		ret = __sev_do_cmd_locked(SEV_CMD_DOWNLOAD_FIRMWARE, data, &error);
+
+	if (ret)
+		dev_dbg(dev, "Failed to update SEV firmware: %#x\n", error);
+	else
+		dev_info(dev, "SEV firmware update successful\n");
+
+	__free_pages(p, order);
+
+fw_err:
+	release_firmware(firmware);
+
+	/* Refresh API version. */
+	if (!ret)
+		__sev_get_api_version_locked();
+}
+
 static int __sev_platform_init_locked(int *error)
 {
 	struct psp_device *psp = psp_master;
@@ -933,6 +1064,8 @@ static int __sev_platform_init_locked(int *error)
 
 	if (!psp || !psp->sev_data)
 		return -ENODEV;
+
+	__sev_update_firmware_once(sev->dev);
 
 	sev = psp->sev_data;
 
@@ -1180,129 +1313,6 @@ void *psp_copy_user_blob(u64 uaddr, u32 len)
 }
 EXPORT_SYMBOL_GPL(psp_copy_user_blob);
 
-static int sev_get_api_version(void)
-{
-	struct sev_device *sev = psp_master->sev_data;
-	struct sev_user_data_status status;
-	int error = 0, ret;
-
-	ret = sev_platform_status(&status, &error);
-	if (ret) {
-		dev_err(sev->dev,
-			"SEV: failed to get status. Error: %#x\n", error);
-		return 1;
-	}
-
-	sev->api_major = status.api_major;
-	sev->api_minor = status.api_minor;
-	sev->build = status.build;
-	sev->state = status.state;
-
-	return 0;
-}
-
-static int sev_get_firmware(struct device *dev,
-			    const struct firmware **firmware)
-{
-	char fw_name_specific[SEV_FW_NAME_SIZE];
-	char fw_name_subset[SEV_FW_NAME_SIZE];
-
-	snprintf(fw_name_specific, sizeof(fw_name_specific),
-		 "amd/amd_sev_fam%.2xh_model%.2xh.sbin",
-		 boot_cpu_data.x86, boot_cpu_data.x86_model);
-
-	snprintf(fw_name_subset, sizeof(fw_name_subset),
-		 "amd/amd_sev_fam%.2xh_model%.1xxh.sbin",
-		 boot_cpu_data.x86, (boot_cpu_data.x86_model & 0xf0) >> 4);
-
-	/* Check for SEV FW for a particular model.
-	 * Ex. amd_sev_fam17h_model00h.sbin for Family 17h Model 00h
-	 *
-	 * or
-	 *
-	 * Check for SEV FW common to a subset of models.
-	 * Ex. amd_sev_fam17h_model0xh.sbin for
-	 *     Family 17h Model 00h -- Family 17h Model 0Fh
-	 *
-	 * or
-	 *
-	 * Fall-back to using generic name: sev.fw
-	 */
-	if ((firmware_request_nowarn(firmware, fw_name_specific, dev) >= 0) ||
-	    (firmware_request_nowarn(firmware, fw_name_subset, dev) >= 0) ||
-	    (firmware_request_nowarn(firmware, SEV_FW_FILE, dev) >= 0))
-		return 0;
-
-	return -ENOENT;
-}
-
-/* Don't fail if SEV FW couldn't be updated. Continue with existing SEV FW */
-static int sev_update_firmware(struct device *dev)
-{
-	struct sev_data_download_firmware *data;
-	const struct firmware *firmware;
-	int ret, error, order;
-	struct page *p;
-	u64 data_size;
-
-	if (!sev_version_greater_or_equal(0, 15)) {
-		dev_dbg(dev, "DOWNLOAD_FIRMWARE not supported\n");
-		return -1;
-	}
-
-	if (sev_get_firmware(dev, &firmware) == -ENOENT) {
-		dev_dbg(dev, "No SEV firmware file present\n");
-		return -1;
-	}
-
-	/*
-	 * SEV FW expects the physical address given to it to be 32
-	 * byte aligned. Memory allocated has structure placed at the
-	 * beginning followed by the firmware being passed to the SEV
-	 * FW. Allocate enough memory for data structure + alignment
-	 * padding + SEV FW.
-	 */
-	data_size = ALIGN(sizeof(struct sev_data_download_firmware), 32);
-
-	order = get_order(firmware->size + data_size);
-	p = alloc_pages(GFP_KERNEL, order);
-	if (!p) {
-		ret = -1;
-		goto fw_err;
-	}
-
-	/*
-	 * Copy firmware data to a kernel allocated contiguous
-	 * memory region.
-	 */
-	data = page_address(p);
-	memcpy(page_address(p) + data_size, firmware->data, firmware->size);
-
-	data->address = __psp_pa(page_address(p) + data_size);
-	data->len = firmware->size;
-
-	ret = sev_do_cmd(SEV_CMD_DOWNLOAD_FIRMWARE, data, &error);
-
-	/*
-	 * A quirk for fixing the committed TCB version, when upgrading from
-	 * earlier firmware version than 1.50.
-	 */
-	if (!ret && !sev_version_greater_or_equal(1, 50))
-		ret = sev_do_cmd(SEV_CMD_DOWNLOAD_FIRMWARE, data, &error);
-
-	if (ret)
-		dev_dbg(dev, "Failed to update SEV firmware: %#x\n", error);
-	else
-		dev_info(dev, "SEV firmware update successful\n");
-
-	__free_pages(p, order);
-
-fw_err:
-	release_firmware(firmware);
-
-	return ret;
-}
-
 static void snp_set_hsave_pa(void *arg)
 {
 	wrmsrl(MSR_VM_HSAVE_PA, 0);
@@ -1316,6 +1326,8 @@ static int __sev_snp_init_locked(int *error)
 
 	if (!psp || !psp->sev_data)
 		return -ENODEV;
+
+	__sev_update_firmware_once(sev->dev);
 
 	sev = psp->sev_data;
 
@@ -2160,11 +2172,8 @@ void sev_pci_init(void)
 
 	psp_timeout = psp_probe_timeout;
 
-	if (sev_get_api_version())
+	if (__sev_get_api_version_locked())
 		goto err;
-
-	if (sev_update_firmware(sev->dev) == 0)
-		sev_get_api_version();
 
 	/*
 	 * Allocate the intermediate buffers used for the legacy command handling.

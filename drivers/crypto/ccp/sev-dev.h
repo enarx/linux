@@ -46,6 +46,7 @@ struct snp_host_map {
 struct sev_device {
 	struct device *dev;
 	struct psp_device *psp;
+	bool update_firmware_called;
 
 	void __iomem *io_regs;
 
