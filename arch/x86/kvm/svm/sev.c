@@ -349,7 +349,6 @@ static int sev_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
 			goto e_free;
 
 		spin_lock_init(&sev->psc_lock);
-		ret = sev_snp_init(&argp->error);
 		mutex_init(&sev->guest_req_lock);
 	}
 
@@ -2550,6 +2549,12 @@ int sev_mem_enc_ioctl(struct kvm *kvm, void __user *argp)
 	    !is_cmd_allowed_from_mirror(sev_cmd.id)) {
 		r = -EINVAL;
 		goto out;
+	}
+
+	if (sev_snp_enabled) {
+		r = sev_snp_init(&sev_cmd.error);
+		if (r)
+			goto out;
 	}
 
 	switch (sev_cmd.id) {
