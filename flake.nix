@@ -26,8 +26,8 @@
         } @ args:
           buildLinux (args
             // rec {
-              version = "6.1.0-rc6";
-              modDirVersion = "6.1.0-rc6";
+              version = "6.1.0-rc4";
+              modDirVersion = "6.1.0-rc4";
               extraMeta.branch = lib.versions.majorMinor version;
 
               src = lib.cleanSource ./.;
@@ -46,7 +46,7 @@
                 CRYPTO_DEV_SP_PSP = yes;
                 DMADEVICES = yes;
                 HIGH_RES_TIMERS = yes;
-                KVM = yes;
+                KVM = module;
                 KVM_AMD = module;
                 KVM_AMD_SEV = yes;
                 MEMORY_FAILURE = yes;
