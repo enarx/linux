@@ -976,6 +976,14 @@ static int __sev_platform_init_locked(int *error)
 	if (sev->state == SEV_STATE_INIT)
 		return 0;
 
+	if (!sev_es_tmr) {
+		/* Obtain the TMR memory area for SEV-ES use */
+		sev_es_tmr = sev_fw_alloc(sev_es_tmr_size);
+		if (!sev_es_tmr)
+			dev_warn(sev->dev,
+				 "SEV: TMR allocation failed, SEV-ES support unavailable\n");
+	}
+
 	if (sev_init_ex_buffer) {
 		init_function = __sev_init_ex_locked;
 		rc = sev_read_init_ex_file();
@@ -2340,12 +2348,6 @@ void sev_pci_init(void)
 			goto skip_legacy;
 		}
 	}
-
-	/* Obtain the TMR memory area for SEV-ES use */
-	sev_es_tmr = sev_fw_alloc(sev_es_tmr_size);
-	if (!sev_es_tmr)
-		dev_warn(sev->dev,
-			 "SEV: TMR allocation failed, SEV-ES support unavailable\n");
 
 	if (!psp_init_on_probe)
 		return;
