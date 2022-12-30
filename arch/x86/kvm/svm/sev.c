@@ -343,11 +343,9 @@ static int sev_guest_init(struct kvm *kvm, struct kvm_sev_cmd *argp)
 			goto e_free;
 
 		mutex_init(&sev->guest_req_lock);
-		ret = sev_snp_init(&argp->error, false);
-	} else {
-		ret = sev_platform_init(&argp->error);
 	}
 
+	ret = sev_platform_init(&argp->error);
 	if (ret)
 		goto e_free;
 

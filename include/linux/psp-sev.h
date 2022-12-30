@@ -795,21 +795,6 @@ struct sev_data_snp_shutdown_ex {
 int sev_platform_init(int *error);
 
 /**
- * sev_snp_init - perform SEV SNP_INIT command
- *
- * @error: SEV command return code
- * @init_on_probe: indicates if called during module probe/init
- *
- * Returns:
- * 0 if the SEV successfully processed the command
- * -%ENODEV    if the SEV device is not available
- * -%ENOTSUPP  if the SEV does not support SEV
- * -%ETIMEDOUT if the SEV command timed out
- * -%EIO       if the SEV returned a non-zero return code
- */
-int sev_snp_init(int *error, bool init_on_probe);
-
-/**
  * sev_platform_status - perform SEV PLATFORM_STATUS command
  *
  * @status: sev_user_data_status structure to be processed
