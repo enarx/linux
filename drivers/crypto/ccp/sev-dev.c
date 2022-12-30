@@ -1220,16 +1220,15 @@ void *psp_copy_user_blob(u64 uaddr, u32 len)
 }
 EXPORT_SYMBOL_GPL(psp_copy_user_blob);
 
-static int sev_get_api_version(void)
+static int __sev_get_api_version_locked(void)
 {
 	struct sev_device *sev = psp_master->sev_data;
 	struct sev_user_data_status status;
 	int error = 0, ret;
 
-	ret = sev_platform_status(&status, &error);
+	ret = __sev_do_cmd_locked(SEV_CMD_PLATFORM_STATUS, &status, &error);
 	if (ret) {
-		dev_err(sev->dev,
-			"SEV: failed to get status. Error: %#x\n", error);
+		dev_err(sev->dev, "SEV: failed to get status. Error: %#x\n", error);
 		return 1;
 	}
 
@@ -2309,11 +2308,11 @@ void sev_pci_init(void)
 
 	psp_timeout = psp_probe_timeout;
 
-	if (sev_get_api_version())
+	if (__sev_get_api_version_locked())
 		goto err;
 
 	if (sev_update_firmware(sev->dev) == 0)
-		sev_get_api_version();
+		__sev_get_api_version_locked();
 
 	/* If an init_ex_path is provided rely on INIT_EX for PSP initialization
 	 * instead of INIT.
