@@ -3745,6 +3745,11 @@ static kvm_pfn_t gfn_to_pfn_restricted(struct kvm *kvm, gfn_t gfn)
 	int order = 0;
 
 	slot = gfn_to_memslot(kvm, gfn);
+	if (!slot) {
+		pr_err("SEV: Failure retrieving memslot for GFN 0x%llx\n", gfn);
+		return INVALID_PAGE;
+	}
+
 	if (!kvm_slot_can_be_private(slot)) {
 		pr_err("SEV: Failure retrieving restricted memslot for GFN 0x%llx, flags 0x%x, userspace_addr: 0x%lx\n",
 		       gfn, slot->flags, slot->userspace_addr);
