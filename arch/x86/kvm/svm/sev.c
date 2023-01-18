@@ -2230,6 +2230,23 @@ static int snp_launch_update_gfn_handler(struct kvm *kvm,
 			pr_err("SEV-SNP launch update failed, ret: 0x%x, fw_error: 0x%x\n",
 			       ret, *error);
 			snp_page_reclaim(pfns[i]);
+
+			/*
+			 * When invalid CPUID function entries are detected, the firmware
+			 * corrects these entries.  In that case write the page back to
+			 * userspace.
+			 */
+			if (params.page_type == SNP_PAGE_TYPE_CPUID &&
+			    *error == SEV_RET_INVALID_PARAM) {
+				int ret;
+
+				host_rmp_make_shared(pfns[i], PG_LEVEL_4K, true);
+
+				ret = kvm_write_guest_page(kvm, gfn, kvaddr, 0, PAGE_SIZE);
+				if (ret)
+					pr_err("Guest write failed, ret: 0x%x\n", ret);
+			}
+
 			goto e_release;
 		}
 	}
