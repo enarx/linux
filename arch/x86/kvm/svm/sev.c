@@ -500,7 +500,7 @@ static int sev_get_memfile_pfn(struct kvm *kvm, unsigned long addr,
 			       unsigned long size, unsigned long npages,
 			       struct page **pages)
 {
-	return kvm_vm_do_hva_range_op(kvm, addr, size,
+	return kvm_vm_do_hva_range_op(kvm, addr, addr + size,
 				      sev_get_memfile_pfn_handler, pages);
 }
 
