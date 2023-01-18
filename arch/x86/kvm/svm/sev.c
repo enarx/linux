@@ -510,7 +510,7 @@ static struct page **sev_pin_memory(struct kvm *kvm, unsigned long uaddr,
 {
 	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
 	unsigned long npages, size;
-	int npinned;
+	int npinned = 0;
 	unsigned long locked, lock_limit;
 	struct page **pages;
 	unsigned long first, last;
