@@ -81,7 +81,7 @@ enum {
 #define VMCB_ALWAYS_DIRTY_MASK	((1U << VMCB_INTR) | (1U << VMCB_CR2))
 
 /* Supported init feature flags */
-#define SEV_SNP_SUPPORTED_FLAGS		0x0
+#define SEV_SNP_SUPPORTED_FLAGS		KVM_SEV_SNP_RESTRICTED_INJET
 
 struct kvm_sev_info {
 	bool active;		/* SEV enabled guest */

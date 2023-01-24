@@ -306,6 +306,7 @@ static void sev_unbind_asid(struct kvm *kvm, unsigned int handle)
 
 static int verify_snp_init_flags(struct kvm *kvm, struct kvm_sev_cmd *argp)
 {
+	struct kvm_sev_info *sev = &to_kvm_svm(kvm)->sev_info;
 	struct kvm_snp_init params;
 	int ret = 0;
 
@@ -315,6 +316,10 @@ static int verify_snp_init_flags(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	if (params.flags & ~SEV_SNP_SUPPORTED_FLAGS)
 		ret = -EOPNOTSUPP;
 
+	/* Save the supplied flags value */
+	sev->snp_init_flags = params.flags;
+
+	/* Return the supported flags value */
 	params.flags = SEV_SNP_SUPPORTED_FLAGS;
 
 	if (copy_to_user((void __user *)(uintptr_t)argp->data, &params, sizeof(params)))
@@ -372,6 +377,7 @@ e_no_asid:
 	sev->snp_active = false;
 	sev->es_active = false;
 	sev->active = false;
+	sev->snp_init_flags = 0;
 	return ret;
 }
 
@@ -835,6 +841,10 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	/* Enable the SEV-SNP feature */
 	if (sev_snp_guest(svm->vcpu.kvm))
 		save->sev_features |= SVM_SEV_FEAT_SNP_ACTIVE;
+
+	if (sev->snp_init_flags & KVM_SEV_SNP_RESTRICTED_INJET)
+		save->sev_features |= SVM_SEV_FEAT_RESTRICTED_INJECTION;
+
 	/*
 	 * Save the VMSA synced SEV features. For now, they are the same for
 	 * all vCPUs, so just save each time.
