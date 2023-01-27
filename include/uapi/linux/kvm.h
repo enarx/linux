@@ -2054,8 +2054,13 @@ struct kvm_sev_receive_update_data {
 /* enable the restricted injection timer */
 #define KVM_SEV_SNP_RESTRICTED_TIMER_INJET   (1 << 1)
 
+/* use the given reset vector for sev_features and vintr_ctrl */
+#define KVM_SEV_SNP_RESET_VECTOR   (1 << 2)
+
 struct kvm_snp_init {
 	__u64 flags;
+	__u64 sev_features;
+	__u64 vintr_ctrl;
 };
 
 struct kvm_sev_snp_launch_start {

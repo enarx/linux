@@ -303,6 +303,11 @@ static int verify_snp_init_flags(struct kvm *kvm, struct kvm_sev_cmd *argp)
 	/* Save the supplied flags value */
 	sev->snp_init_flags = params.flags;
 
+	if (params.flags & KVM_SEV_SNP_RESET_VECTOR) {
+		sev->sev_features = params.sev_features;
+		sev->vintr_ctrl = params.vintr_ctrl;
+	}
+
 	/* Return the supported flags value */
 	params.flags = SEV_SNP_SUPPORTED_FLAGS;
 
@@ -785,6 +790,33 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	if (svm->vcpu.guest_debug || (svm->vmcb->save.dr7 & ~DR7_FIXED_1))
 		return -EINVAL;
 
+	/* Validate that the user defined reset vector meets the expectations: */
+	if (sev->snp_init_flags & KVM_SEV_SNP_RESET_VECTOR) {
+		u64 unsupported = sev->sev_features & SVM_SEV_FEAT_UNSUPPORTED_MASK;
+
+		if (sev->sev_features & unsupported) {
+			pr_debug("sev_features: unsupported flags: 0x%016llx\n", unsupported);
+			return -EINVAL;
+		}
+
+		if (!(sev_snp_guest(svm->vcpu.kvm) &&
+		    (sev->sev_features & SVM_SEV_FEAT_SNP_ACTIVE))) {
+			pr_debug("sev_features: SNP_ACTIVE is not set\n");
+			return -EINVAL;
+		}
+
+		if (!((sev->snp_init_flags & KVM_SEV_SNP_RESTRICTED_INJET) &&
+		    (sev->sev_features & SVM_SEV_FEAT_RESTRICTED_INJECTION))) {
+			pr_debug("sev_features: SNP_SEV_FEAT_RESTRICTED_INJECTION is not set\n");
+			return -EINVAL;
+		}
+
+		if (sev->vintr_ctrl) {
+			pr_debug("vintr_ctrl: unsupported flags: 0x%016llx\n", sev->vintr_ctrl);
+			return -EINVAL;
+		}
+	}
+
 	/*
 	 * SEV-ES will use a VMSA that is pointed to by the VMCB, not
 	 * the traditional VMSA that is part of the VMCB. Copy the
@@ -820,18 +852,23 @@ static int sev_es_sync_vmsa(struct vcpu_svm *svm)
 	save->xss  = svm->vcpu.arch.ia32_xss;
 	save->dr6  = svm->vcpu.arch.dr6;
 
-	/* Enable the SEV-SNP feature */
-	if (sev_snp_guest(svm->vcpu.kvm))
-		save->sev_features |= SVM_SEV_FEAT_SNP_ACTIVE;
+	if (sev->snp_init_flags & KVM_SEV_SNP_RESET_VECTOR) {
+		save->sev_features = sev->sev_features;
+		save->vintr_ctrl = sev->vintr_ctrl;
+	} else {
+		/* Enable the SEV-SNP feature */
+		if (sev_snp_guest(svm->vcpu.kvm))
+			save->sev_features |= SVM_SEV_FEAT_SNP_ACTIVE;
 
-	if (sev->snp_init_flags & KVM_SEV_SNP_RESTRICTED_INJET)
-		save->sev_features |= SVM_SEV_FEAT_RESTRICTED_INJECTION;
+		if (sev->snp_init_flags & KVM_SEV_SNP_RESTRICTED_INJET)
+			save->sev_features |= SVM_SEV_FEAT_RESTRICTED_INJECTION;
 
-	/*
-	 * Save the VMSA synced SEV features. For now, they are the same for
-	 * all vCPUs, so just save each time.
-	 */
-	sev->sev_features = save->sev_features;
+		/*
+		 * Save the VMSA synced SEV features. For now, they are the same for
+		 * all vCPUs, so just save each time.
+		 */
+		sev->sev_features = save->sev_features;
+	}
 
 	pr_debug("Virtual Machine Save Area (VMSA):\n");
 	print_hex_dump_debug("", DUMP_PREFIX_NONE, 16, 1, save, sizeof(*save), false);

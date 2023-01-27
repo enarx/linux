@@ -106,6 +106,7 @@ struct kvm_sev_info {
 	struct mutex guest_req_lock;
 
 	u64 sev_features;	/* Features set at VMSA creation */
+	u64 vintr_ctrl;
 };
 
 struct kvm_svm {
